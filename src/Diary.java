@@ -10,16 +10,16 @@ public class Diary {
         createTables();
 
         while (true) {
-            System.out.println("\nPersonal Diary and Savings Tracker");
+            System.out.println("\nDiary and Savings");
             System.out.println("1. Add Diary Entry");
             System.out.println("2. View Diary Entries");
             System.out.println("3. Add Daily Savings");
             System.out.println("4. View Total Savings");
             System.out.println("5. Exit");
-            System.out.print("Choose an option: ");
+            System.out.print("Choose: ");
 
             if (!scanner.hasNextInt()) {
-                System.out.println("Invalid input. Please enter a number.");
+                System.out.println("Invalid.");
                 scanner.next();
                 continue;
             }
@@ -43,13 +43,13 @@ public class Diary {
                     System.out.println("Goodbye!");
                     return;
                 default:
-                    System.out.println("Invalid choice. Try again.");
+                    System.out.println("Invalid.");
             }
         }
     }
 
-    private static void private static void createTables() {
-        System.out.println("Database file location: " + DB_URL);
+    private static void createTables() {
+        System.out.println("Database file: " + DB_URL);
 
         try (Connection conn = DriverManager.getConnection(DB_URL);
              Statement stmt = conn.createStatement()) {
@@ -67,9 +67,9 @@ public class Diary {
             stmt.execute(createDiaryTable);
             stmt.execute(createSavingsTable);
 
-            System.out.println("Database tables initialized.");
+            System.out.println("Database tables done.");
         } catch (SQLException e) {
-            System.out.println("Error creating tables: " + e.getMessage());
+            System.out.println("Error: " + e.getMessage());
         }
     }
 
@@ -109,7 +109,7 @@ public class Diary {
     private static void addDailySavings() {
         System.out.print("Enter amount saved today: ");
         if (!scanner.hasNextDouble()) {
-            System.out.println("Invalid input. Please enter a valid number.");
+            System.out.println("Invalid.");
             scanner.next();
             return;
         }
