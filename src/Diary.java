@@ -2,13 +2,109 @@ import java.sql.*;
 import java.time.LocalDate;
 import java.util.Scanner;
 
-public class Diary {
+//depend
+interface DatabaseManager {
+    void executeUpdate(String query, Object... params) throws SQLException;
+    ResultSet executeQuery(String query, Object... params) throws SQLException;
+}
+
+class SQLiteManager implements DatabaseManager {
     private static final String DB_URL = "jdbc:sqlite:diary.db";
+
+    public SQLiteManager() {
+        createTables();
+    }
+
+    private void createTables() {
+        try (Connection conn = DriverManager.getConnection(DB_URL);
+             Statement stmt = conn.createStatement()) {
+            stmt.execute("CREATE TABLE IF NOT EXISTS diary (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, entry TEXT NOT NULL)");
+            stmt.execute("CREATE TABLE IF NOT EXISTS savings (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, amount REAL NOT NULL)");
+        } catch (SQLException e) {
+            System.out.println("Database error: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void executeUpdate(String query, Object... params) throws SQLException {
+        try (Connection conn = DriverManager.getConnection(DB_URL);
+             PreparedStatement pstmt = conn.prepareStatement(query)) {
+            for (int i = 0; i < params.length; i++) {
+                pstmt.setObject(i + 1, params[i]);
+            }
+            pstmt.executeUpdate();
+        }
+    }
+
+    @Override
+    public ResultSet executeQuery(String query, Object... params) throws SQLException {
+        Connection conn = DriverManager.getConnection(DB_URL);
+        PreparedStatement pstmt = conn.prepareStatement(query);
+        for (int i = 0; i < params.length; i++) {
+            pstmt.setObject(i + 1, params[i]);
+        }
+        return pstmt.executeQuery();
+    }
+}
+
+//single responsobility
+abstract class Record {
+    protected final DatabaseManager dbManager;
+    protected final LocalDate date;
+
+    public Record(DatabaseManager dbManager) {
+        this.dbManager = dbManager;
+        this.date = LocalDate.now();
+    }
+
+    public abstract void save();
+}
+
+// inheritance
+class DiaryEntry extends Record {
+    private final String entry;
+
+    public DiaryEntry(DatabaseManager dbManager, String entry) {
+        super(dbManager);
+        this.entry = entry;
+    }
+
+    @Override
+    public void save() {
+        try {
+            dbManager.executeUpdate("INSERT INTO diary (date, entry) VALUES (?, ?)", date.toString(), entry);
+            System.out.println("Diary entry saved!");
+        } catch (SQLException e) {
+            System.out.println("Error saving entry: " + e.getMessage());
+        }
+    }
+}
+
+//polymorphism
+class Savings extends Record {
+    private final double amount;
+
+    public Savings(DatabaseManager dbManager, double amount) {
+        super(dbManager);
+        this.amount = amount;
+    }
+
+    @Override
+    public void save() {
+        try {
+            dbManager.executeUpdate("INSERT INTO savings (date, amount) VALUES (?, ?)", date.toString(), amount);
+            System.out.println("Savings recorded!");
+        } catch (SQLException e) {
+            System.out.println("Error saving amount: " + e.getMessage());
+        }
+    }
+}
+
+public class Diary {
     private static final Scanner scanner = new Scanner(System.in);
+    private static final DatabaseManager dbManager = new SQLiteManager();
 
     public static void main(String[] args) {
-        createTables();
-
         while (true) {
             System.out.println("\nDiary and Savings");
             System.out.println("1. Add Diary Entry");
@@ -28,7 +124,8 @@ public class Diary {
 
             switch (choice) {
                 case 1:
-                    addDiaryEntry();
+                    System.out.print("Enter today's diary entry: ");
+                    new DiaryEntry(dbManager, scanner.nextLine()).save();
                     break;
                 case 2:
                     viewDiaryEntries();
@@ -48,51 +145,8 @@ public class Diary {
         }
     }
 
-    private static void createTables() {
-        System.out.println("Database file: " + DB_URL);
-
-        try (Connection conn = DriverManager.getConnection(DB_URL);
-             Statement stmt = conn.createStatement()) {
-
-            String createDiaryTable = "CREATE TABLE IF NOT EXISTS diary (" +
-                    "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                    "date TEXT NOT NULL, " +
-                    "entry TEXT NOT NULL)";
-
-            String createSavingsTable = "CREATE TABLE IF NOT EXISTS savings (" +
-                    "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                    "date TEXT NOT NULL, " +
-                    "amount REAL NOT NULL)";
-
-            stmt.execute(createDiaryTable);
-            stmt.execute(createSavingsTable);
-
-            System.out.println("Database tables done.");
-        } catch (SQLException e) {
-            System.out.println("Error: " + e.getMessage());
-        }
-    }
-
-    private static void addDiaryEntry() {
-        System.out.print("Enter today's diary entry: ");
-        String entry = scanner.nextLine();
-
-        try (Connection conn = DriverManager.getConnection(DB_URL);
-             PreparedStatement pstmt = conn.prepareStatement("INSERT INTO diary (date, entry) VALUES (?, ?)")) {
-            pstmt.setString(1, LocalDate.now().toString());
-            pstmt.setString(2, entry);
-            pstmt.executeUpdate();
-            System.out.println("Entry saved!");
-        } catch (SQLException e) {
-            System.out.println("Error saving entry: " + e.getMessage());
-        }
-    }
-
     private static void viewDiaryEntries() {
-        try (Connection conn = DriverManager.getConnection(DB_URL);
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery("SELECT date, entry FROM diary")) {
-
+        try (ResultSet rs = dbManager.executeQuery("SELECT date, entry FROM diary")) {
             boolean found = false;
             while (rs.next()) {
                 System.out.println(rs.getString("date") + " - " + rs.getString("entry"));
@@ -113,30 +167,17 @@ public class Diary {
             scanner.next();
             return;
         }
-        double amount = scanner.nextDouble();
+        new Savings(dbManager, scanner.nextDouble()).save();
         scanner.nextLine();
-
-        try (Connection conn = DriverManager.getConnection(DB_URL);
-             PreparedStatement pstmt = conn.prepareStatement("INSERT INTO savings (date, amount) VALUES (?, ?)")) {
-            pstmt.setString(1, LocalDate.now().toString());
-            pstmt.setDouble(2, amount);
-            pstmt.executeUpdate();
-            System.out.println("Savings recorded!");
-        } catch (SQLException e) {
-            System.out.println("Error saving amount: " + e.getMessage());
-        }
     }
 
     private static void viewTotalSavings() {
-        double total = 0;
-        try (Connection conn = DriverManager.getConnection(DB_URL);
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery("SELECT SUM(amount) AS total FROM savings")) {
-
+        try (ResultSet rs = dbManager.executeQuery("SELECT SUM(amount) AS total FROM savings")) {
             if (rs.next() && rs.getString("total") != null) {
-                total = rs.getDouble("total");
+                System.out.println("Total Savings: $" + rs.getDouble("total"));
+            } else {
+                System.out.println("Total Savings: $0");
             }
-            System.out.println("Total Savings: $" + total);
         } catch (SQLException e) {
             System.out.println("Error retrieving savings: " + e.getMessage());
         }
